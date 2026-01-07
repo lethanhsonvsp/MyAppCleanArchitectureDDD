@@ -3,11 +3,11 @@ using MyApp.Application.Repository;
 using MyApp.Domain.Events;
 using MyApp.Shared.DTOs;
 
-namespace MyApp.Application.Charging.EventHandlers;
+namespace MyApp.Application.EventHandlers;
 
-#region ================= APPLICATION NOTIFICATIONS (ADAPTERS) =================
+#region ================= APPLICATION NOTIFICATIONS =================
 
-// Domain → MediatR adapter
+// Domain → Application
 public record ChargingStatusChangedNotification(
     ChargingStatusChangedEvent DomainEvent
 ) : INotification;
@@ -20,10 +20,35 @@ public record ChargingOvertemperatureWarningNotification(
     ChargingOvertemperatureWarningEvent DomainEvent
 ) : INotification;
 
+// Snapshot notification (FULL STATE)
+public record ChargingSnapshotNotification(
+    ChargingStatusDto Dto
+) : INotification;
+
 #endregion
 
 // ═════════════════════════════════════════════════════════════
-// CHARGING STATUS CHANGED EVENT HANDLER
+// SNAPSHOT HANDLER (QUAN TRỌNG NHẤT)
+// ═════════════════════════════════════════════════════════════
+
+public class ChargingSnapshotEventHandler
+    : INotificationHandler<ChargingSnapshotNotification>
+{
+    private readonly ISignalRPublisher _signalR;
+
+    public ChargingSnapshotEventHandler(ISignalRPublisher signalR)
+    {
+        _signalR = signalR;
+    }
+
+    public async Task Handle(ChargingSnapshotNotification n, CancellationToken ct)
+    {
+        await _signalR.PublishChargingSnapshotAsync(n.Dto);
+    }
+}
+
+// ═════════════════════════════════════════════════════════════
+// STATUS CHANGED HANDLER
 // ═════════════════════════════════════════════════════════════
 
 public class ChargingStatusChangedEventHandler
@@ -47,7 +72,7 @@ public class ChargingStatusChangedEventHandler
         var evt = notification.DomainEvent;
 
         _logger.LogInformation(
-            "Charging status changed: ChargingId={ChargingId}, IsCharging={IsCharging}",
+            "Charging status changed: {ChargingId} → {IsCharging}",
             evt.ChargingId, evt.IsCharging);
 
         await _signalR.PublishChargingStatusAsync(
@@ -57,7 +82,7 @@ public class ChargingStatusChangedEventHandler
 }
 
 // ═════════════════════════════════════════════════════════════
-// FAULT DETECTED EVENT HANDLER
+// FAULT HANDLER
 // ═════════════════════════════════════════════════════════════
 
 public class ChargingFaultDetectedEventHandler
@@ -84,10 +109,9 @@ public class ChargingFaultDetectedEventHandler
         var evt = notification.DomainEvent;
 
         _logger.LogWarning(
-            "FAULT DETECTED: ChargingId={ChargingId}, OCP={Ocp}, OVP={Ovp}, Watchdog={Watchdog}",
+            "FAULT: {ChargingId} OCP={Ocp} OVP={Ovp} WD={Watchdog}",
             evt.ChargingId, evt.Ocp, evt.Ovp, evt.Watchdog);
 
-        // Auto-stop charging on fault
         _canSender.StopPeriodicTransmission();
 
         await _signalR.PublishChargingFaultAsync(
@@ -97,46 +121,6 @@ public class ChargingFaultDetectedEventHandler
             evt.Watchdog);
     }
 }
-
-// ═════════════════════════════════════════════════════════════
-// OVERTEMPERATURE WARNING HANDLER
-// ═════════════════════════════════════════════════════════════
-
-public class ChargingOvertemperatureWarningEventHandler
-    : INotificationHandler<ChargingOvertemperatureWarningNotification>
-{
-    private readonly ILogger<ChargingOvertemperatureWarningEventHandler> _logger;
-    private readonly ISignalRPublisher _signalR;
-
-    public ChargingOvertemperatureWarningEventHandler(
-        ILogger<ChargingOvertemperatureWarningEventHandler> logger,
-        ISignalRPublisher signalR)
-    {
-        _logger = logger;
-        _signalR = signalR;
-    }
-
-    public async Task Handle(
-        ChargingOvertemperatureWarningNotification notification,
-        CancellationToken ct)
-    {
-        var evt = notification.DomainEvent;
-
-        _logger.LogWarning(
-            "OVERTEMPERATURE: ChargingId={ChargingId}, Secondary={Secondary}°C, Primary={Primary}°C",
-            evt.ChargingId,
-            evt.SecondaryTemp_C,
-            evt.PrimaryTemp_C);
-
-        await _signalR.PublishChargingWarningAsync(
-            evt.ChargingId,
-            $"Overtemperature: Secondary={evt.SecondaryTemp_C:F1}°C, Primary={evt.PrimaryTemp_C:F1}°C");
-    }
-}
-
-// ═════════════════════════════════════════════════════════════
-// SIGNALR PUBLISHER INTERFACE
-// ═════════════════════════════════════════════════════════════
 
 public interface ISignalRPublisher
 {

@@ -1,5 +1,5 @@
 ﻿using MyApp.Application.Abstractions;
-using MyApp.Application.Charging.EventHandlers;
+using MyApp.Application.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
 using MyApp.Infrastructure.Industrial.CAN;
@@ -92,6 +92,8 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
             // push realtime snapshot
             var signalR = scope.ServiceProvider.GetRequiredService<ISignalRPublisher>();
             await signalR.PublishChargingSnapshotAsync(dto);
+            Console.WriteLine($"🔥 ADAPTER RX CAN: 0x{frame.Id:X}");
+
         }
         catch (Exception ex)
         {

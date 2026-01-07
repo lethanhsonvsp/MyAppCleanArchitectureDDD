@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using MyApp.Application.Abstractions;
-using MyApp.Application.Charging.EventHandlers;
 using MyApp.Application.EventHandlers;
 using MyApp.Application.Queries;
 using MyApp.Application.Repository;
@@ -87,7 +86,12 @@ builder.Services.AddSingleton<CanChargingAdapter>();
 builder.Services.AddSingleton<ICanCommandSender>(sp => sp.GetRequiredService<CanChargingAdapter>());
 
 // Start CAN reader
-builder.Services.AddHostedService<CanReaderBackgroundService>();
+builder.Services.AddHostedService(sp =>
+{
+    // Force adapter creation BEFORE CAN reader
+    _ = sp.GetRequiredService<CanChargingAdapter>();
+    return sp.GetRequiredService<CanReaderBackgroundService>();
+});
 
 
 builder.Services.AddScoped<IChargingRepository, ChargingRepository>();

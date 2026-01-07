@@ -1,5 +1,4 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using MyApp.Application.Charging;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
 using System;

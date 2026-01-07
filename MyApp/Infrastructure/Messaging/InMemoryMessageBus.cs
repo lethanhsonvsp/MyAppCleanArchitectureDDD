@@ -1,6 +1,5 @@
 ﻿using MediatR;
 using MyApp.Application.Abstractions;
-using MyApp.Application.Charging;
 using MyApp.Domain.Events;
 
 namespace MyApp.Infrastructure.Messaging;

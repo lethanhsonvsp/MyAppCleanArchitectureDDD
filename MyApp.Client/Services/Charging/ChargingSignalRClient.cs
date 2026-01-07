@@ -9,7 +9,7 @@ namespace MyApp.Client.Services.Charging;
 public class ChargingSignalRClient : IAsyncDisposable
 {
     private readonly HubConnection _connection;
-    private readonly ChargingUiState? _uiState;
+    private readonly ChargingUiState _uiState;
 
     public ChargingSignalRClient(string apiBaseUrl, ChargingUiState uiState)
     {
@@ -27,13 +27,13 @@ public class ChargingSignalRClient : IAsyncDisposable
     {
         _connection.On<ChargingStatusUpdate>("ChargingStatusChanged", update =>
         {
-            _uiState!.IsCharging = update.IsCharging;
+            _uiState.IsCharging = update.IsCharging;
             _uiState.NotifyChange();
         });
 
         _connection.On<ChargingFaultUpdate>("ChargingFault", fault =>
         {
-            _uiState!.HasFault = true;
+            _uiState.HasFault = true;
             _uiState.HasOcp = fault.Ocp;
             _uiState.HasOvp = fault.Ovp;
             _uiState.HasWatchdogFault = fault.Watchdog;
@@ -43,15 +43,15 @@ public class ChargingSignalRClient : IAsyncDisposable
         _connection.On<ChargingWarningUpdate>("ChargingWarning", warning =>
         {
             Console.WriteLine($"⚠️ WARNING: {warning.Message}");
-            _uiState!.NotifyChange();
-        });
-        _connection.On<ChargingStatusDto>("ChargingSnapshot", dto =>
-        {
-            _uiState!.UpdateFromDto(dto);
-            Console.WriteLine($"🔄 Snapshot: V={dto.Voltage_V}V, I={dto.Current_A}A, Charging={dto.IsCharging}");
             _uiState.NotifyChange();
         });
 
+        _connection.On<ChargingStatusDto>("ChargingSnapshot", dto =>
+        {
+            _uiState.UpdateFromDto(dto);
+            _uiState.NotifyChange();
+            Console.WriteLine($"🔄 SNAPSHOT {dto.Voltage_V}V {dto.Current_A}A");
+        });
     }
 
     public async Task StartAsync()
@@ -59,6 +59,8 @@ public class ChargingSignalRClient : IAsyncDisposable
         if (_connection.State == HubConnectionState.Disconnected)
         {
             await _connection.StartAsync();
+            Console.WriteLine("✅ Charging SignalR connected");
+
         }
     }
 
