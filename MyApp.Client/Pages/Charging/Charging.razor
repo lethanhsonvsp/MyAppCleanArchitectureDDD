@@ -1,0 +1,192 @@
+﻿@page "/counter"
+@using MyApp.Client.Services.Charging
+@inject ChargingUiState UiState
+@inject ChargingApiClient ApiClient
+@inject ChargingSignalRClient SignalRClient
+@implements IDisposable
+
+<PageTitle>Charging</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h3" Class="mb-4">🔋 Wireless Charger</MudText>
+
+    @* ═══════════════════════════════════════════════════════ *@
+    @* STATUS CARD *@
+    @* ═══════════════════════════════════════════════════════ *@
+    
+    <MudCard Class="mb-4">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.h5">Power Output</MudText>
+                    <MudText Typo="Typo.h2" Color="@(UiState.IsCharging ? Color.Success : Color.Default)">
+                        @UiState.Voltage_V.ToString("F1") V
+                    </MudText>
+                    <MudText Typo="Typo.h3">
+                        @UiState.Current_A.ToString("F2") A
+                    </MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Primary">
+                        @((UiState.Voltage_V * UiState.Current_A).ToString("F1")) W
+                    </MudText>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.h6">Status</MudText>
+                    <MudChip T = "string" Color="@GetStateColor()" Size="Size.Large">
+                        @UiState.State
+                    </MudChip>
+
+                    @if (UiState.HasFault)
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mt-2">
+                            <MudText>⚠️ FAULT DETECTED</MudText>
+                            @if (UiState.HasOcp) { <MudText>• Overcurrent</MudText> }
+                            @if (UiState.HasOvp) { <MudText>• Overvoltage</MudText> }
+                            @if (UiState.HasWatchdogFault) { <MudText>• Watchdog</MudText> }
+                        </MudAlert>
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudCardContent>
+    </MudCard>
+
+    @* ═══════════════════════════════════════════════════════ *@
+    @* CONTROL PANEL *@
+    @* ═══════════════════════════════════════════════════════ *@
+    
+    <MudCard Class="mb-4">
+        <MudCardHeader>
+            <MudText Typo="Typo.h5">Control Panel</MudText>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudNumericField @bind-Value="_targetVoltage" 
+                             Label="Target Voltage (V)" 
+                             Min="0" Max="1000" Step="1" />
+            
+            <MudNumericField @bind-Value="_targetCurrent" 
+                             Label="Target Current (A)" 
+                             Min="0" Max="100" Step="0.1" 
+                             Class="mt-2" />
+
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Success" 
+                       OnClick="StartCharging"
+                       Disabled="UiState.IsCharging"
+                       Class="mt-3 mr-2">
+                Start Charging
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Error" 
+                       OnClick="StopCharging"
+                       Disabled="!UiState.IsCharging"
+                       Class="mt-3 mr-2">
+                Stop
+            </MudButton>
+
+            <MudButton Variant="Variant.Outlined" 
+                       Color="Color.Warning" 
+                       OnClick="ClearFaults"
+                       Class="mt-3">
+                Clear Faults
+            </MudButton>
+        </MudCardContent>
+    </MudCard>
+
+    @* ═══════════════════════════════════════════════════════ *@
+    @* TELEMETRY *@
+    @* ═══════════════════════════════════════════════════════ *@
+    
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudCard>
+                <MudCardHeader>
+                    <MudText Typo="Typo.h6">AC Input</MudText>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText>Voltage: @UiState.AcVoltage_V.ToString("F1") V</MudText>
+                    <MudText>Current: @UiState.AcCurrent_A.ToString("F2") A</MudText>
+                    <MudText>Frequency: @UiState.AcFrequency_Hz.ToString("F1") Hz</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudCard>
+                <MudCardHeader>
+                    <MudText Typo="Typo.h6">Wireless</MudText>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText>Efficiency: @UiState.WirelessEfficiency_Pct.ToString("F1")%</MudText>
+                    <MudText>Gap: @UiState.WirelessGap_Mm mm</MudText>
+                    <MudChip T = "bool" Size="Size.Small" Color="@(UiState.WirelessOk ? Color.Success : Color.Error)">
+                        @(UiState.WirelessOk ? "OK" : "ERROR")
+                    </MudChip>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudCard>
+                <MudCardHeader>
+                    <MudText Typo="Typo.h6">Temperature</MudText>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Color="@GetTempColor(UiState.SecondaryTemp_C)">
+                        Secondary: @UiState.SecondaryTemp_C.ToString("F1") °C
+                    </MudText>
+                    <MudText Color="@GetTempColor(UiState.PrimaryTemp_C)">
+                        Primary: @UiState.PrimaryTemp_C.ToString("F1") °C
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private double _targetVoltage = 400;
+    private double _targetCurrent = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UiState.OnChange += StateHasChanged;
+        await SignalRClient.StartAsync();
+    }
+
+    private async Task StartCharging()
+    {
+        await ApiClient.StartChargingAsync(_targetVoltage, _targetCurrent);
+    }
+
+    private async Task StopCharging()
+    {
+        await ApiClient.StopChargingAsync();
+    }
+
+    private async Task ClearFaults()
+    {
+        await ApiClient.ClearFaultsAsync();
+    }
+
+    private Color GetStateColor() => UiState.State switch
+    {
+        "Charging" => Color.Success,
+        "Fault" => Color.Error,
+        "Standby" => Color.Info,
+        _ => Color.Default
+    };
+
+    private Color GetTempColor(double temp) => temp switch
+    {
+        > 85 => Color.Error,
+        > 70 => Color.Warning,
+        _ => Color.Default
+    };
+
+    public void Dispose()
+    {
+        UiState.OnChange -= StateHasChanged;
+        SignalRClient.DisposeAsync().AsTask().Wait();
+    }
+}

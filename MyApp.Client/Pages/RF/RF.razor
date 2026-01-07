@@ -1,0 +1,210 @@
+﻿@page "/counter1"
+@inject RemoteControlApiClient ApiClient
+@inject RemoteControlSignalRClient SignalRClient
+@inject RemoteControlUiState State
+@implements IDisposable
+@rendermode InteractiveAuto
+
+
+@{
+    var rc = State.Current; // KHÔNG BAO GIỜ NULL
+    var isSafe = rc.RemoteReady && !rc.EStop && rc.Enable;
+}
+
+<MudPaper Class="pa-4 mx-auto" MaxWidth="900px" Elevation="4">
+    <MudText Typo="Typo.h3" Class="mb-2">Remote Control Monitor</MudText>
+
+    <!-- STATUS BADGE -->
+    <MudAlert Severity="@(isSafe ? Severity.Success : Severity.Error)"
+              Variant="Variant.Filled"
+              Dense="true"
+              Class="mb-4 text-center">
+        <MudText Typo="Typo.h6">
+            @(isSafe ? "✅ SAFE TO OPERATE" : "⚠️ NOT SAFE")
+        </MudText>
+    </MudAlert>
+
+    <!-- SYSTEM STATUS -->
+    <MudText Typo="Typo.h6" Class="mb-2">System Status</MudText>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="4">
+            <MudChip T = "bool" Color="@(rc.RemoteReady ? Color.Success : Color.Error)"
+                     Variant="Variant.Filled">
+                Remote Ready: @(rc.RemoteReady ? "YES" : "NO")
+            </MudChip>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudChip T="bool" Color="@(rc.EStop? Color.Error: Color.Success)"
+                     Variant="Variant.Filled">
+                E-Stop: @(rc.EStop ? "ACTIVE" : "OK")
+            </MudChip>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudChip T = "bool" Color="@(rc.Enable ? Color.Success : Color.Warning)"
+                     Variant="Variant.Filled">
+                Enabled: @(rc.Enable ? "YES" : "NO")
+            </MudChip>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudText>Mode: <b>@rc.Mode</b></MudText>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="4">
+            <MudText>Heartbeat: <b>@rc.Heartbeat</b></MudText>
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+
+    <!-- JOYSTICK -->
+    <MudText Typo="Typo.h6" Class="mb-2">Joystick</MudText>
+
+    <MudStack Spacing="2">
+
+        <MudStack Direction="Row" AlignItems="AlignItems.Center">
+            <MudText Style="width:100px">Linear</MudText>
+            <MudProgressLinear Value="@(Math.Abs(rc.Linear) * 100)"
+                               Color="Color.Primary"
+                               Style="flex:1" />
+            <MudText Style="width:80px" Align="Align.Right">
+                @rc.Linear.ToString("F2")
+            </MudText>
+        </MudStack>
+
+        <MudStack Direction="Row" AlignItems="AlignItems.Center">
+            <MudText Style="width:100px">Angular</MudText>
+            <MudProgressLinear Value="@(Math.Abs(rc.Angular) * 100)"
+                               Color="Color.Info"
+                               Style="flex:1" />
+            <MudText Style="width:80px" Align="Align.Right">
+                @rc.Angular.ToString("F2")
+            </MudText>
+        </MudStack>
+
+        <MudStack Direction="Row" AlignItems="AlignItems.Center">
+            <MudText Style="width:100px">Speed</MudText>
+            <MudProgressLinear Value="@(rc.Speed * 100)"
+                               Color="Color.Secondary"
+                               Style="flex:1" />
+            <MudText Style="width:80px" Align="Align.Right">
+                @((rc.Speed * 100).ToString("F0"))%
+            </MudText>
+        </MudStack>
+
+    </MudStack>
+
+    <MudDivider Class="my-4" />
+
+    <!-- BUTTONS -->
+    <MudText Typo="Typo.h6" Class="mb-2">Buttons</MudText>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="6">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="@(!rc.LiftUp)"
+                       FullWidth>
+                ⬆️ Lift Up
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="6">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="@(!rc.LiftDown)"
+                       FullWidth>
+                ⬇️ Lift Down
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="6">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="@(!rc.RotateLeft)"
+                       FullWidth>
+                ↶ Rotate Left
+            </MudButton>
+        </MudItem>
+
+        <MudItem xs="6">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Disabled="@(!rc.RotateRight)"
+                       FullWidth>
+                ↷ Rotate Right
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider Class="my-4" />
+
+    <!-- ACTION -->
+    <MudAlert Severity="@GetActionSeverity(rc.Action)"
+              Variant="Variant.Filled"
+              Class="text-center">
+        <MudText Typo="Typo.h4">@rc.Action</MudText>
+    </MudAlert>
+
+    <!-- TIMESTAMP -->
+    <MudText Typo="Typo.caption"
+             Align="Align.Center"
+             Class="mt-2 text-secondary">
+        Last updated:
+        @(
+            rc.Timestamp == DateTime.MinValue
+                ? "--:--:--"
+                : rc.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")
+         )
+    </MudText>
+
+</MudPaper>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        State.OnChange += StateHasChanged;
+
+        SignalRClient.OnRemoteControlUpdated += OnRemoteControlUpdate;
+
+        try
+        {
+            await SignalRClient.ConnectAsync();
+
+            var initial = await ApiClient.GetStatusAsync();
+            if (initial != null)
+            {
+                State.Update(initial);
+            }
+        }
+        catch
+        {
+            // giữ UI ở trạng thái Empty DTO
+        }
+    }
+
+    private void OnRemoteControlUpdate(RemoteControlDto dto)
+    {
+        InvokeAsync(() => State.Update(dto));
+    }
+
+    private Severity GetActionSeverity(string action) => action switch
+    {
+        "E-STOP" => Severity.Error,
+        "Remote Not Ready" => Severity.Warning,
+        "Disabled" => Severity.Warning,
+        "Idle" => Severity.Info,
+        "No Data" => Severity.Normal,
+        _ => Severity.Success
+    };
+
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+        SignalRClient.OnRemoteControlUpdated -= OnRemoteControlUpdate;
+    }
+}
