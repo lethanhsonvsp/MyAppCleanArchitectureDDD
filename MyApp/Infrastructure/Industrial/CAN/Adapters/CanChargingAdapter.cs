@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
-using MyApp.Application.Abstractions;
-using MyApp.Application.Charging;
-using MyApp.Application.EventHandlers;
+﻿using MyApp.Application.Abstractions;
+using MyApp.Application.Charging.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
 
@@ -28,26 +26,6 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
     private record TxCommand(double Voltage_V, double Current_A, bool PowerStage1, bool ClearFaults);
 
     public bool IsTxActive => _isTxActive;
-
-    public CanChargingAdapter(
-        SocketCan can,
-        IChargingRepository repo,
-        IMessageBus messageBus,
-        ILogger<CanChargingAdapter> logger)
-    {
-        _can = can;
-        _repo = repo;
-        _messageBus = messageBus;
-        _logger = logger;
-
-        _can.OnFrameReceived += OnCanFrameReceived;
-        _txTimer = new Timer(_ => OnTxTick(), null, Timeout.Infinite, Timeout.Infinite);
-    }
-
-    // ═════════════════════════════════════════════════════════════
-    // RX HANDLER
-    // ═════════════════════════════════════════════════════════════
-
     private readonly ISignalRPublisher _signalRPublisher;
     private DateTime _lastBroadcast = DateTime.MinValue;
 
@@ -64,7 +42,11 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
         _signalRPublisher = signalRPublisher;
         _logger = logger;
 
+        // ✅ CRITICAL: Subscribe to CAN frame events
         _can.OnFrameReceived += OnCanFrameReceived;
+
+        Console.WriteLine("✅ CanChargingAdapter created and subscribed to CAN events");
+
         _txTimer = new Timer(_ => OnTxTick(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -72,6 +54,9 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
     {
         try
         {
+            // ✅ DEBUG: Log every frame received
+            Console.WriteLine($"📥 CAN Frame: ID=0x{frame.Id:X3} DLC={frame.Dlc}");
+
             var state = await _repo.GetActiveAsync() ?? ChargingState.Create();
 
             DecodeCanFrame(frame.Id, frame.Data, state);
@@ -88,6 +73,7 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
             var now = DateTime.UtcNow;
             if ((now - _lastBroadcast).TotalMilliseconds >= 100)
             {
+                Console.WriteLine($"📡 Broadcasting snapshot: {state.Voltage_V:F1}V {state.Current_A:F2}A");
                 await BroadcastSnapshot(state);
                 _lastBroadcast = now;
             }

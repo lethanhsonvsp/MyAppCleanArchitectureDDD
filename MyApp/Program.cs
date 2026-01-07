@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using MyApp.Application.Abstractions;
+using MyApp.Application.Charging.EventHandlers;
 using MyApp.Application.EventHandlers;
 using MyApp.Application.Queries;
 using MyApp.Application.Repository;

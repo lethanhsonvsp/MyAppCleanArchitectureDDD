@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using MyApp.Application.EventHandlers;
+using MyApp.Application.Charging.EventHandlers;
 using MyApp.Shared.DTOs;
 
 namespace MyApp.Infrastructure.Messaging.SignalR;

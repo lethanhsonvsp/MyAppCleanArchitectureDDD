@@ -1,6 +1,5 @@
 ﻿using MediatR;
 using Microsoft.Extensions.Logging;
-using MyApp.Application.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Events;
 

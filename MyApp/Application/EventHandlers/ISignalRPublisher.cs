@@ -1,6 +1,6 @@
 ﻿using MyApp.Shared.DTOs;
 
-namespace MyApp.Application.EventHandlers;
+namespace MyApp.Application.Charging.EventHandlers;
 
 /// <summary>
 /// SignalR Publisher Interface
