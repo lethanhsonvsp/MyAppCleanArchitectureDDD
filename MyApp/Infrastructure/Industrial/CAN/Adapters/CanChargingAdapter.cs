@@ -1,16 +1,22 @@
-﻿using MyApp.Application.Abstractions;
+﻿using Microsoft.Extensions.Logging;
+using MyApp.Application.Abstractions;
+using MyApp.Application.Charging;
 using MyApp.Application.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
-using MyApp.Infrastructure.Industrial.CAN;
-using MyApp.Shared.DTOs;
 
 namespace MyApp.Infrastructure.Industrial.CAN.Adapters;
 
+/// <summary>
+/// CAN Adapter for Charging Module
+/// - Reads CAN frames and updates ChargingState
+/// - Sends CAN control commands
+/// </summary>
 public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
 {
     private readonly SocketCan _can;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IChargingRepository _repo;
+    private readonly IMessageBus _messageBus;
     private readonly ILogger<CanChargingAdapter> _logger;
 
     private readonly Timer _txTimer;
@@ -25,11 +31,13 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
 
     public CanChargingAdapter(
         SocketCan can,
-        IServiceScopeFactory scopeFactory, // ← Chỉ cần scopeFactory thôi
+        IChargingRepository repo,
+        IMessageBus messageBus,
         ILogger<CanChargingAdapter> logger)
     {
         _can = can;
-        _scopeFactory = scopeFactory;
+        _repo = repo;
+        _messageBus = messageBus;
         _logger = logger;
 
         _can.OnFrameReceived += OnCanFrameReceived;
@@ -40,60 +48,49 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
     // RX HANDLER
     // ═════════════════════════════════════════════════════════════
 
+    private readonly ISignalRPublisher _signalRPublisher;
+    private DateTime _lastBroadcast = DateTime.MinValue;
+
+    public CanChargingAdapter(
+        SocketCan can,
+        IChargingRepository repo,
+        IMessageBus messageBus,
+        ISignalRPublisher signalRPublisher,
+        ILogger<CanChargingAdapter> logger)
+    {
+        _can = can;
+        _repo = repo;
+        _messageBus = messageBus;
+        _signalRPublisher = signalRPublisher;
+        _logger = logger;
+
+        _can.OnFrameReceived += OnCanFrameReceived;
+        _txTimer = new Timer(_ => OnTxTick(), null, Timeout.Infinite, Timeout.Infinite);
+    }
+
     private async void OnCanFrameReceived(SocketCan.CanFrame frame)
     {
         try
         {
-            // Tạo scope mới, lấy cả repo và messageBus từ scope
-            using var scope = _scopeFactory.CreateScope();
-            var repo = scope.ServiceProvider.GetRequiredService<IChargingRepository>();
-            var messageBus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
-
-            var state = await repo.GetActiveAsync() ?? ChargingState.Create();
+            var state = await _repo.GetActiveAsync() ?? ChargingState.Create();
 
             DecodeCanFrame(frame.Id, frame.Data, state);
 
-            // Publish domain events qua messageBus từ scope
+            // Publish domain events
             foreach (var evt in state.DomainEvents)
-                await messageBus.PublishAsync(evt);
+                await _messageBus.PublishAsync(evt);
 
             state.ClearDomainEvents();
 
-            await repo.SaveAsync(state);
-            // tạo DTO snapshot
-            var dto = new ChargingStatusDto
+            await _repo.SaveAsync(state);
+
+            // ✅ BROADCAST REAL-TIME SNAPSHOT (debounced to ~10 Hz)
+            var now = DateTime.UtcNow;
+            if ((now - _lastBroadcast).TotalMilliseconds >= 100)
             {
-                Id = state.Id,
-                Voltage_V = state.Voltage_V,
-                Current_A = state.Current_A,
-                Power_W = state.Voltage_V * state.Current_A,
-                IsCharging = state.IsCharging,
-
-                State = state.State.ToString(),
-                HasFault = state.HasFault,
-                HasOcp = state.HasOcp,
-                HasOvp = state.HasOvp,
-                HasWatchdogFault = state.HasWatchdogFault,
-
-                AcVoltage_V = state.AcVoltage_V,
-                AcCurrent_A = state.AcCurrent_A,
-                AcFrequency_Hz = state.AcFrequency_Hz,
-
-                WirelessEfficiency_Pct = state.WirelessEfficiency_Pct,
-                WirelessGap_Mm = state.WirelessGap_Mm,
-                WirelessOk = state.WirelessOk,
-
-                SecondaryTemp_C = state.SecondaryTemp_C,
-                PrimaryTemp_C = state.PrimaryTemp_C,
-
-                LastUpdated = state.LastUpdated
-            };
-
-            // push realtime snapshot
-            var signalR = scope.ServiceProvider.GetRequiredService<ISignalRPublisher>();
-            await signalR.PublishChargingSnapshotAsync(dto);
-            Console.WriteLine($"🔥 ADAPTER RX CAN: 0x{frame.Id:X}");
-
+                await BroadcastSnapshot(state);
+                _lastBroadcast = now;
+            }
         }
         catch (Exception ex)
         {
@@ -101,8 +98,36 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
         }
     }
 
+    private async Task BroadcastSnapshot(ChargingState state)
+    {
+        var dto = new MyApp.Shared.DTOs.ChargingStatusDto
+        {
+            Id = state.Id,
+            Voltage_V = state.Voltage_V,
+            Current_A = state.Current_A,
+            Power_W = state.Voltage_V * state.Current_A,
+            IsCharging = state.IsCharging,
+            State = state.State.ToString(),
+            HasFault = state.HasFault,
+            HasOcp = state.HasOcp,
+            HasOvp = state.HasOvp,
+            HasWatchdogFault = state.HasWatchdogFault,
+            AcVoltage_V = state.AcVoltage_V,
+            AcCurrent_A = state.AcCurrent_A,
+            AcFrequency_Hz = state.AcFrequency_Hz,
+            WirelessEfficiency_Pct = state.WirelessEfficiency_Pct,
+            WirelessGap_Mm = state.WirelessGap_Mm,
+            WirelessOk = state.WirelessOk,
+            SecondaryTemp_C = state.SecondaryTemp_C,
+            PrimaryTemp_C = state.PrimaryTemp_C,
+            LastUpdated = state.LastUpdated
+        };
+
+        await _signalRPublisher.PublishChargingSnapshotAsync(dto);
+    }
+
     // ═════════════════════════════════════════════════════════════
-    // DECODE CAN FRAME - GIỮ NGUYÊN
+    // DECODE CAN FRAME
     // ═════════════════════════════════════════════════════════════
 
     private void DecodeCanFrame(uint canId, byte[] d, ChargingState state)
@@ -165,6 +190,7 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
             case 0x511: // Life Report A
             case 0x521: // Life Report B
             case 0x531: // Life Report C
+                // Aggregate life stats (simplified)
                 if (canId == 0x511)
                 {
                     var ahDelivered = CanBit.Get(d, 0, 32) * 0.1;
@@ -205,7 +231,7 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
     }
 
     // ═════════════════════════════════════════════════════════════
-    // TX COMMANDS - GIỮ NGUYÊN HẾT
+    // TX COMMANDS (ICanCommandSender)
     // ═════════════════════════════════════════════════════════════
 
     public Task SendControlCommandAsync(double voltage_V, double current_A, bool powerStage1, bool clearFaults)
@@ -225,7 +251,7 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
         {
             _isTxActive = true;
         }
-        _txTimer.Change(0, 100);
+        _txTimer.Change(0, 100); // 10 Hz
     }
 
     public void StopPeriodicTransmission()
@@ -236,6 +262,7 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
             _currentCommand = new TxCommand(0, 0, false, false);
         }
 
+        // Send OFF frames for 500ms then stop
         for (int i = 0; i < 5; i++)
         {
             SendFrame();
@@ -268,16 +295,25 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
         _can.Send(0x191, data);
     }
 
+    // ═════════════════════════════════════════════════════════════
+    // ENCODE CONTROL COMMAND (0x191)
+    // ═════════════════════════════════════════════════════════════
+
     private static byte[] EncodeControlCommand(double voltage, double current, bool powerStage1, bool clearFaults)
     {
         var d = new byte[8];
 
+        // Voltage [0..19] – 0.001 V
         ulong v = (ulong)Math.Clamp(voltage * 1000.0, 0, (1UL << 20) - 1);
         CanBit.Set(d, 0, 20, v);
 
+        // PowerStage1 [20]
         CanBit.Set(d, 20, 1, powerStage1 ? 1UL : 0UL);
+
+        // ClearFaults [21]
         CanBit.Set(d, 21, 1, clearFaults ? 1UL : 0UL);
 
+        // Current [32..49] – 0.001 A
         ulong iA = (ulong)Math.Clamp(current * 1000.0, 0, (1UL << 18) - 1);
         CanBit.Set(d, 32, 18, iA);
 

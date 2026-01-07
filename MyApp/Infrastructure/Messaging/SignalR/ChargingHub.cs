@@ -21,39 +21,50 @@ public class ChargingHub : Hub
 /// </summary>
 public class ChargingSignalRPublisher : ISignalRPublisher
 {
-    private readonly IHubContext<ChargingHub> _hub;
+    private readonly IHubContext<ChargingHub> _hubContext;
 
-    public ChargingSignalRPublisher(IHubContext<ChargingHub> hub)
+    public ChargingSignalRPublisher(IHubContext<ChargingHub> hubContext)
     {
-        _hub = hub;
+        _hubContext = hubContext;
     }
 
-    public Task PublishChargingStatusAsync(Guid id, bool charging)
-        => _hub.Clients.All.SendAsync("ChargingStatusChanged", new
+    public async Task PublishChargingStatusAsync(Guid chargingId, bool isCharging)
+    {
+        await _hubContext.Clients.All.SendAsync("ChargingStatusChanged", new
         {
-            ChargingId = id,
-            IsCharging = charging,
+            ChargingId = chargingId,
+            IsCharging = isCharging,
             Timestamp = DateTime.UtcNow
         });
+    }
 
-    public Task PublishChargingFaultAsync(Guid id, bool ocp, bool ovp, bool watchdog)
-        => _hub.Clients.All.SendAsync("ChargingFault", new
+    public async Task PublishChargingFaultAsync(Guid chargingId, bool ocp, bool ovp, bool watchdog)
+    {
+        await _hubContext.Clients.All.SendAsync("ChargingFault", new
         {
-            ChargingId = id,
+            ChargingId = chargingId,
             Ocp = ocp,
             Ovp = ovp,
             Watchdog = watchdog,
             Timestamp = DateTime.UtcNow
         });
+    }
 
-    public Task PublishChargingWarningAsync(Guid id, string msg)
-        => _hub.Clients.All.SendAsync("ChargingWarning", new
+    public async Task PublishChargingWarningAsync(Guid chargingId, string message)
+    {
+        await _hubContext.Clients.All.SendAsync("ChargingWarning", new
         {
-            ChargingId = id,
-            Message = msg,
+            ChargingId = chargingId,
+            Message = message,
             Timestamp = DateTime.UtcNow
         });
+    }
 
-    public Task PublishChargingSnapshotAsync(ChargingStatusDto dto)
-        => _hub.Clients.All.SendAsync("ChargingSnapshot", dto);
+    /// <summary>
+    /// ✅ NEW: Broadcast complete charging snapshot (called on every CAN frame)
+    /// </summary>
+    public async Task PublishChargingSnapshotAsync(ChargingStatusDto snapshot)
+    {
+        await _hubContext.Clients.All.SendAsync("ChargingSnapshot", snapshot);
+    }
 }

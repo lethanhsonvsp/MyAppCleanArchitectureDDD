@@ -83,6 +83,7 @@ public class ChargingUiState
         }
     }
 
+
     public void UpdateFromDto(MyApp.Shared.DTOs.ChargingStatusDto dto)
     {
         Voltage_V = dto.Voltage_V;

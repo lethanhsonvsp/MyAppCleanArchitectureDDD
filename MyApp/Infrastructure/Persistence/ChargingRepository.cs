@@ -1,45 +1,44 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using MyApp.Application.Charging;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
-using System;
 
 namespace MyApp.Infrastructure.Persistence;
 
 /// <summary>
 /// Charging Repository Implementation
-/// NOTE: Charging is typically a streaming/real-time module,
-/// so persistence is optional or minimal (only for historical data)
+/// NOTE: Charging is a real-time streaming module,
+/// so we use in-memory cache (no DB writes on every CAN frame)
 /// </summary>
 public class ChargingRepository : IChargingRepository
 {
-    private readonly AppDbContext _db;
-
-    // In-memory cache for active state (performance optimization)
+    // ✅ SINGLETON: In-memory cache for active state
     private ChargingState? _activeState;
     private readonly object _lock = new();
-
-    public ChargingRepository(AppDbContext db)
-    {
-        _db = db;
-    }
 
     public Task<ChargingState?> GetActiveAsync(CancellationToken ct = default)
     {
         lock (_lock)
         {
-            // Return cached state if available
-            if (_activeState != null)
-                return Task.FromResult<ChargingState?>(_activeState);
-        }
+            // Return cached state or create new
+            if (_activeState == null)
+            {
+                _activeState = ChargingState.Create();
+            }
 
-        // Otherwise try to load from DB (or create new)
-        return Task.FromResult<ChargingState?>(ChargingState.Create());
+            return Task.FromResult<ChargingState?>(_activeState);
+        }
     }
 
-    public async Task<ChargingState?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public Task<ChargingState?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        return await _db.ChargingStates
-            .FirstOrDefaultAsync(s => s.Id == id, ct);
+        lock (_lock)
+        {
+            if (_activeState?.Id == id)
+                return Task.FromResult<ChargingState?>(_activeState);
+
+            return Task.FromResult<ChargingState?>(null);
+        }
     }
 
     public Task SaveAsync(ChargingState state, CancellationToken ct = default)
@@ -49,10 +48,8 @@ public class ChargingRepository : IChargingRepository
             _activeState = state;
         }
 
-        // Optionally persist to DB for historical data
-        // For real-time streaming, you might skip DB writes entirely
-        // and only use in-memory state
-
+        // ✅ NO DB WRITES: Real-time data doesn't need persistence
+        // If you need historical data, write to DB in background job instead
         return Task.CompletedTask;
     }
 }

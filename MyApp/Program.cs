@@ -86,6 +86,8 @@ builder.Services.AddSingleton<CanChargingAdapter>();
 builder.Services.AddSingleton<ICanCommandSender>(sp => sp.GetRequiredService<CanChargingAdapter>());
 
 // Start CAN reader
+builder.Services.AddHostedService<CanReaderBackgroundService>();
+
 builder.Services.AddHostedService(sp =>
 {
     // Force adapter creation BEFORE CAN reader
@@ -94,8 +96,8 @@ builder.Services.AddHostedService(sp =>
 });
 
 
-builder.Services.AddScoped<IChargingRepository, ChargingRepository>();
-builder.Services.AddScoped<IMessageBus, InMemoryMessageBus>();
+builder.Services.AddSingleton<IChargingRepository, ChargingRepository>();
+builder.Services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 builder.Services.AddSingleton<ISignalRPublisher, ChargingSignalRPublisher>();
 
 

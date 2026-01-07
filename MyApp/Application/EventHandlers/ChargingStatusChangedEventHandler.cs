@@ -1,58 +1,16 @@
 ﻿using MediatR;
+using Microsoft.Extensions.Logging;
+using MyApp.Application.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Events;
-using MyApp.Shared.DTOs;
 
-namespace MyApp.Application.EventHandlers;
-
-#region ================= APPLICATION NOTIFICATIONS =================
-
-// Domain → Application
-public record ChargingStatusChangedNotification(
-    ChargingStatusChangedEvent DomainEvent
-) : INotification;
-
-public record ChargingFaultDetectedNotification(
-    ChargingFaultDetectedEvent DomainEvent
-) : INotification;
-
-public record ChargingOvertemperatureWarningNotification(
-    ChargingOvertemperatureWarningEvent DomainEvent
-) : INotification;
-
-// Snapshot notification (FULL STATE)
-public record ChargingSnapshotNotification(
-    ChargingStatusDto Dto
-) : INotification;
-
-#endregion
+namespace MyApp.Application.Charging.EventHandlers;
 
 // ═════════════════════════════════════════════════════════════
-// SNAPSHOT HANDLER (QUAN TRỌNG NHẤT)
+// CHARGING STATUS CHANGED EVENT HANDLER
 // ═════════════════════════════════════════════════════════════
 
-public class ChargingSnapshotEventHandler
-    : INotificationHandler<ChargingSnapshotNotification>
-{
-    private readonly ISignalRPublisher _signalR;
-
-    public ChargingSnapshotEventHandler(ISignalRPublisher signalR)
-    {
-        _signalR = signalR;
-    }
-
-    public async Task Handle(ChargingSnapshotNotification n, CancellationToken ct)
-    {
-        await _signalR.PublishChargingSnapshotAsync(n.Dto);
-    }
-}
-
-// ═════════════════════════════════════════════════════════════
-// STATUS CHANGED HANDLER
-// ═════════════════════════════════════════════════════════════
-
-public class ChargingStatusChangedEventHandler
-    : INotificationHandler<ChargingStatusChangedNotification>
+public class ChargingStatusChangedEventHandler : INotificationHandler<ChargingStatusChangedEvent>
 {
     private readonly ILogger<ChargingStatusChangedEventHandler> _logger;
     private readonly ISignalRPublisher _signalR;
@@ -65,28 +23,22 @@ public class ChargingStatusChangedEventHandler
         _signalR = signalR;
     }
 
-    public async Task Handle(
-        ChargingStatusChangedNotification notification,
-        CancellationToken ct)
+    public async Task Handle(ChargingStatusChangedEvent evt, CancellationToken ct)
     {
-        var evt = notification.DomainEvent;
-
         _logger.LogInformation(
-            "Charging status changed: {ChargingId} → {IsCharging}",
+            "Charging status changed: ChargingId={ChargingId}, IsCharging={IsCharging}",
             evt.ChargingId, evt.IsCharging);
 
-        await _signalR.PublishChargingStatusAsync(
-            evt.ChargingId,
-            evt.IsCharging);
+        // Broadcast to all connected clients via SignalR
+        await _signalR.PublishChargingStatusAsync(evt.ChargingId, evt.IsCharging);
     }
 }
 
 // ═════════════════════════════════════════════════════════════
-// FAULT HANDLER
+// FAULT DETECTED EVENT HANDLER
 // ═════════════════════════════════════════════════════════════
 
-public class ChargingFaultDetectedEventHandler
-    : INotificationHandler<ChargingFaultDetectedNotification>
+public class ChargingFaultDetectedEventHandler : INotificationHandler<ChargingFaultDetectedEvent>
 {
     private readonly ILogger<ChargingFaultDetectedEventHandler> _logger;
     private readonly ISignalRPublisher _signalR;
@@ -102,30 +54,44 @@ public class ChargingFaultDetectedEventHandler
         _canSender = canSender;
     }
 
-    public async Task Handle(
-        ChargingFaultDetectedNotification notification,
-        CancellationToken ct)
+    public async Task Handle(ChargingFaultDetectedEvent evt, CancellationToken ct)
     {
-        var evt = notification.DomainEvent;
-
         _logger.LogWarning(
-            "FAULT: {ChargingId} OCP={Ocp} OVP={Ovp} WD={Watchdog}",
+            "FAULT DETECTED: ChargingId={ChargingId}, OCP={Ocp}, OVP={Ovp}, Watchdog={Watchdog}",
             evt.ChargingId, evt.Ocp, evt.Ovp, evt.Watchdog);
 
+        // Auto-stop charging on fault
         _canSender.StopPeriodicTransmission();
 
-        await _signalR.PublishChargingFaultAsync(
-            evt.ChargingId,
-            evt.Ocp,
-            evt.Ovp,
-            evt.Watchdog);
+        // Notify UI
+        await _signalR.PublishChargingFaultAsync(evt.ChargingId, evt.Ocp, evt.Ovp, evt.Watchdog);
     }
 }
 
-public interface ISignalRPublisher
+// ═════════════════════════════════════════════════════════════
+// OVERTEMPERATURE WARNING HANDLER
+// ═════════════════════════════════════════════════════════════
+
+public class ChargingOvertemperatureWarningEventHandler : INotificationHandler<ChargingOvertemperatureWarningEvent>
 {
-    Task PublishChargingStatusAsync(Guid chargingId, bool isCharging);
-    Task PublishChargingFaultAsync(Guid chargingId, bool ocp, bool ovp, bool watchdog);
-    Task PublishChargingWarningAsync(Guid chargingId, string message);
-    Task PublishChargingSnapshotAsync(ChargingStatusDto dto);
+    private readonly ILogger<ChargingOvertemperatureWarningEventHandler> _logger;
+    private readonly ISignalRPublisher _signalR;
+
+    public ChargingOvertemperatureWarningEventHandler(
+        ILogger<ChargingOvertemperatureWarningEventHandler> logger,
+        ISignalRPublisher signalR)
+    {
+        _logger = logger;
+        _signalR = signalR;
+    }
+
+    public async Task Handle(ChargingOvertemperatureWarningEvent evt, CancellationToken ct)
+    {
+        _logger.LogWarning(
+            "OVERTEMPERATURE: ChargingId={ChargingId}, Secondary={Secondary}°C, Primary={Primary}°C",
+            evt.ChargingId, evt.SecondaryTemp_C, evt.PrimaryTemp_C);
+
+        await _signalR.PublishChargingWarningAsync(evt.ChargingId,
+            $"Overtemperature: Secondary={evt.SecondaryTemp_C:F1}°C, Primary={evt.PrimaryTemp_C:F1}°C");
+    }
 }
