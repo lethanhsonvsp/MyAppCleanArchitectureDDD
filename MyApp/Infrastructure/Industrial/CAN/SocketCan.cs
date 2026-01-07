@@ -200,6 +200,7 @@ public sealed class SocketCan : IDisposable
                 Dlc = frame.can_dlc,
                 Data = frame.data
             });
+            Console.WriteLine($"Received CAN frame: ID=0x{frame.can_id:X}, DLC={frame.can_dlc}");
         }
     }
 

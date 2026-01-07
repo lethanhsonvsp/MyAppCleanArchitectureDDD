@@ -1,7 +1,9 @@
 ﻿using MyApp.Application.Abstractions;
+using MyApp.Application.Charging.EventHandlers;
 using MyApp.Application.Repository;
 using MyApp.Domain.Charging;
 using MyApp.Infrastructure.Industrial.CAN;
+using MyApp.Shared.DTOs;
 
 namespace MyApp.Infrastructure.Industrial.CAN.Adapters;
 
@@ -58,6 +60,38 @@ public sealed class CanChargingAdapter : ICanCommandSender, IDisposable
             state.ClearDomainEvents();
 
             await repo.SaveAsync(state);
+            // tạo DTO snapshot
+            var dto = new ChargingStatusDto
+            {
+                Id = state.Id,
+                Voltage_V = state.Voltage_V,
+                Current_A = state.Current_A,
+                Power_W = state.Voltage_V * state.Current_A,
+                IsCharging = state.IsCharging,
+
+                State = state.State.ToString(),
+                HasFault = state.HasFault,
+                HasOcp = state.HasOcp,
+                HasOvp = state.HasOvp,
+                HasWatchdogFault = state.HasWatchdogFault,
+
+                AcVoltage_V = state.AcVoltage_V,
+                AcCurrent_A = state.AcCurrent_A,
+                AcFrequency_Hz = state.AcFrequency_Hz,
+
+                WirelessEfficiency_Pct = state.WirelessEfficiency_Pct,
+                WirelessGap_Mm = state.WirelessGap_Mm,
+                WirelessOk = state.WirelessOk,
+
+                SecondaryTemp_C = state.SecondaryTemp_C,
+                PrimaryTemp_C = state.PrimaryTemp_C,
+
+                LastUpdated = state.LastUpdated
+            };
+
+            // push realtime snapshot
+            var signalR = scope.ServiceProvider.GetRequiredService<ISignalRPublisher>();
+            await signalR.PublishChargingSnapshotAsync(dto);
         }
         catch (Exception ex)
         {

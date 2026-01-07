@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using MyApp.Application.Repository;
 using MyApp.Domain.Events;
+using MyApp.Shared.DTOs;
 
 namespace MyApp.Application.Charging.EventHandlers;
 
@@ -142,4 +143,5 @@ public interface ISignalRPublisher
     Task PublishChargingStatusAsync(Guid chargingId, bool isCharging);
     Task PublishChargingFaultAsync(Guid chargingId, bool ocp, bool ovp, bool watchdog);
     Task PublishChargingWarningAsync(Guid chargingId, string message);
+    Task PublishChargingSnapshotAsync(ChargingStatusDto dto);
 }

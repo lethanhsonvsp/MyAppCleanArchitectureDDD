@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
+using MyApp.Shared.DTOs;
 
 namespace MyApp.Client.Services.Charging;
 
@@ -42,6 +43,12 @@ public class ChargingSignalRClient : IAsyncDisposable
             Console.WriteLine($"⚠️ WARNING: {warning.Message}");
             _uiState!.NotifyChange();
         });
+        _connection.On<ChargingStatusDto>("ChargingSnapshot", dto =>
+        {
+            _uiState.UpdateFromDto(dto);
+            _uiState.NotifyChange();
+        });
+
     }
 
     public async Task StartAsync()

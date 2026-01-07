@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using MyApp.Application.Charging.EventHandlers;
+using MyApp.Shared.DTOs;
 
 namespace MyApp.Infrastructure.Messaging.SignalR;
 
@@ -35,6 +36,13 @@ public class ChargingSignalRPublisher : ISignalRPublisher
             IsCharging = isCharging,
             Timestamp = DateTime.UtcNow
         });
+    }
+    public async Task PublishChargingSnapshotAsync(ChargingStatusDto dto)
+    {
+        await _hubContext.Clients.All.SendAsync(
+            "ChargingSnapshot",
+            dto
+        );
     }
 
     public async Task PublishChargingFaultAsync(Guid chargingId, bool ocp, bool ovp, bool watchdog)
