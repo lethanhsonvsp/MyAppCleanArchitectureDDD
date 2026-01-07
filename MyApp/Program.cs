@@ -54,8 +54,10 @@ builder.Services.AddHostedService<RemoteControlEventHandler>();
 
 builder.Services.AddScoped<MyApp.Client.Services.Charging.ChargingSignalRClient>(sp =>
 {
-    return new MyApp.Client.Services.Charging.ChargingSignalRClient(apiBaseUrl);
+    var uiState = sp.GetRequiredService<MyApp.Client.Services.Charging.ChargingUiState>();
+    return new MyApp.Client.Services.Charging.ChargingSignalRClient(apiBaseUrl, uiState);
 });
+
 
 // Đăng ký HttpClient với BaseAddress từ configuration
 builder.Services.AddHttpClient<MyApp.Client.Services.Charging.ChargingApiClient>(client =>

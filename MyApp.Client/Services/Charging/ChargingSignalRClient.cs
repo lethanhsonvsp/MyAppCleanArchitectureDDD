@@ -11,8 +11,10 @@ public class ChargingSignalRClient : IAsyncDisposable
     private readonly HubConnection _connection;
     private readonly ChargingUiState? _uiState;
 
-    public ChargingSignalRClient(string apiBaseUrl)
+    public ChargingSignalRClient(string apiBaseUrl, ChargingUiState uiState)
     {
+        _uiState = uiState;
+
         _connection = new HubConnectionBuilder()
             .WithUrl($"{apiBaseUrl}/hubs/charging")
             .WithAutomaticReconnect()
@@ -45,7 +47,8 @@ public class ChargingSignalRClient : IAsyncDisposable
         });
         _connection.On<ChargingStatusDto>("ChargingSnapshot", dto =>
         {
-            _uiState.UpdateFromDto(dto);
+            _uiState!.UpdateFromDto(dto);
+            Console.WriteLine($"🔄 Snapshot: V={dto.Voltage_V}V, I={dto.Current_A}A, Charging={dto.IsCharging}");
             _uiState.NotifyChange();
         });
 

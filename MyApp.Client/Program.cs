@@ -14,11 +14,12 @@ builder.Services.AddHttpClient<RemoteControlApiClient>(client =>
 });
 builder.Services.AddSingleton<ChargingUiState>();
 
-builder.Services.AddScoped(sp =>
+builder.Services.AddScoped<ChargingSignalRClient>(sp =>
 {
     var uiState = sp.GetRequiredService<ChargingUiState>();
-    return new ChargingSignalRClient(apiBaseUrl);
+    return new ChargingSignalRClient(apiBaseUrl, uiState);
 });
+
 
 builder.Services.AddHttpClient<ChargingApiClient>(client =>
 {
